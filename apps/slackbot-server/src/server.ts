@@ -48,47 +48,86 @@ app.command("/calendar", async ({ ack, command, say }) => {
   const args = command.text.trim().split(/\s+/);
 
   if (args[0] === "list") {
-    // ✅ List calendars (already implemented)
     if (!userTokens) {
       await say("⚠️ You need to connect your Google Calendar first. Run `/calendar connect`.");
       return;
     }
     const calendars = await listCalendars(userTokens);
-    const calendarNames = calendars.map((c) => `• ${c.summary ?? "Unnamed Calendar"}`).join("\n");
-    await say(calendars.length ? `Here are your calendars:\n${calendarNames}` : "You have no calendars.");
+    if (!calendars.length) {
+      await say("You have no calendars.");
+      return;
+    }
 
+    const calendarDetails = calendars.map(
+      (c) => `• *${c.summary ?? "Unnamed"}* — ID: \`${c.id}\``
+    ).join("\n");
+
+    await say(`Here are your calendars:\n${calendarDetails}`);
   } else if (args[0] === "connect") {
     // ✅ Provide OAuth link (already implemented)
     const authUrl = getAuthUrl();
     await say(`Please connect your Google Calendar: ${authUrl}`);
 
-  } else if (args[0] === "create") {
-    // 🆕 Create Event Example: `/calendar create [calendarId] [summary] [startDateTime] [endDateTime]`
-    if (args.length < 5) {
-      await say("Usage: `/calendar create [calendarId] [summary] [startDateTime] [endDateTime]`");
+  } if (args[0] === "create") {
+    if (args.length < 4) {
+      await say("Usage: `/calendar create [summary] [startDateTime] [endDateTime]` or `/calendar create [calendarId] [summary] [startDateTime] [endDateTime]`");
       return;
     }
-    const [calendarId, summary, startDateTime, endDateTime] = args.slice(1);
+
+    let calendarId = "primary";
+    let summaryIndex = 1;
+
+    // Check if first argument looks like a calendarId (e.g., contains @ or .)
+    if (args[1].includes("@") || args[1].includes(".")) {
+      calendarId = args[1];
+      summaryIndex = 2;
+    }
+
+    const summary = args[summaryIndex];
+    const startDateTime = args[summaryIndex + 1];
+    const endDateTime = args[summaryIndex + 2];
+
     const event = await createCalendarEvent(userTokens, calendarId, { summary, startDateTime, endDateTime });
     await say(`✅ Event created: ${event.htmlLink}`);
-
   } else if (args[0] === "update") {
-    // 🆕 Update Event Example: `/calendar update [calendarId] [eventId] [newSummary]`
-    if (args.length < 4) {
-      await say("Usage: `/calendar update [calendarId] [eventId] [newSummary]`");
+    // 🆕 Update Event Example: `/calendar update [eventId] [newSummary]` or `/calendar update [calendarId] [eventId] [newSummary]`
+    if (args.length < 3) {
+      await say("Usage: `/calendar update [eventId] [newSummary]` or `/calendar update [calendarId] [eventId] [newSummary]`");
       return;
     }
-    const [calendarId, eventId, newSummary] = args.slice(1);
+
+    let calendarId = "primary";
+    let eventIdIndex = 1;
+
+    // Check if first argument looks like a calendarId (e.g., contains @ or .)
+    if (args[1].includes("@") || args[1].includes(".")) {
+      calendarId = args[1];
+      eventIdIndex = 2;
+    }
+
+    const eventId = args[eventIdIndex];
+    const newSummary = args[eventIdIndex + 1];
+
     const event = await updateCalendarEvent(userTokens, calendarId, eventId, { summary: newSummary });
     await say(`✅ Event updated: ${event.htmlLink}`);
 
   } else if (args[0] === "delete") {
-    // 🆕 Delete Event Example: `/calendar delete [calendarId] [eventId]`
-    if (args.length < 3) {
-      await say("Usage: `/calendar delete [calendarId] [eventId]`");
+    // 🆕 Delete Event Example: `/calendar delete [eventId]` or `/calendar delete [calendarId] [eventId]`
+    if (args.length < 2) {
+      await say("Usage: `/calendar delete [eventId]` or `/calendar delete [calendarId] [eventId]`");
       return;
     }
-    const [calendarId, eventId] = args.slice(1);
+
+    let calendarId = "primary";
+    let eventIdIndex = 1;
+
+    // Check if first argument looks like a calendarId (e.g., contains @ or .)
+    if (args[1].includes("@") || args[1].includes(".")) {
+      calendarId = args[1];
+      eventIdIndex = 2;
+    }
+
+    const eventId = args[eventIdIndex];
     await deleteCalendarEvent(userTokens, calendarId, eventId);
     await say(`✅ Event deleted.`);
 

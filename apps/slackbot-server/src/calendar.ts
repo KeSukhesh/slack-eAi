@@ -97,7 +97,14 @@ export async function listUpcomingEvents(tokens: any, calendarId: string, maxRes
     timeMin: new Date().toISOString(),
     maxResults,
     singleEvents: true,
-    orderBy: 'startTime',
+    orderBy: "startTime",
   });
-  return res.data.items ?? [];
+
+  const events = res.data.items ?? [];
+  return events.map(event => ({
+    summary: event.summary,
+    id: event.id,
+    start: event.start?.dateTime || event.start?.date,
+    htmlLink: event.htmlLink,
+  }));
 }

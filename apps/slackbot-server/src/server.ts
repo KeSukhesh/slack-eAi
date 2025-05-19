@@ -2,7 +2,7 @@ import "dotenv/config";
 import bolt from "@slack/bolt";
 import express from "express";
 import { chatWithOpenAI } from "./openaiAgent.js";
-import { getAuthUrl, listCalendars } from "./calendar.js";
+import { getAuthUrl, listCalendars, listUpcomingEvents } from "./calendar.js";
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "./calendar.js";
 
 
@@ -131,6 +131,24 @@ app.command("/calendar", async ({ ack, command, say }) => {
     await deleteCalendarEvent(userTokens, calendarId, eventId);
     await say(`✅ Event deleted.`);
 
+  } else if (args[0] === "upcoming") {
+    if (!userTokens) {
+      await say("⚠️ You need to connect your Google Calendar first. Run `/calendar connect`.");
+      return;
+    }
+  
+    const calendarId = args[1] || "primary";
+    const events = await listUpcomingEvents(userTokens, calendarId);
+  
+    if (events.length === 0) {
+      await say("No upcoming events found.");
+    } else {
+      const eventDetails = events.map(
+        (e) => `• *${e.summary ?? "No Title"}* at ${e.start} — ID: \`${e.id}\``
+      ).join("\n");
+  
+      await say(`Here are your upcoming events:\n${eventDetails}`);
+    }
   } else {
     await say("Unknown subcommand. Try `/calendar list`, `/calendar connect`, `/calendar create`, `/calendar update`, or `/calendar delete`.");
   }

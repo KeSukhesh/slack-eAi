@@ -77,6 +77,12 @@ healthApp.get("/", (_req, res) => {
   res.send("EA Agent API is running ✅");
 });
 
+healthApp.use((req, _res, next) => {
+  console.log("Incoming Request:", req.method, req.url);
+  next();
+});
+
+
 // Handle Google OAuth2 Callback
 healthApp.get("/api/google/callback", (req, res) => {
   const code = req.query.code as string;

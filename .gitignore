@@ -1,0 +1,33 @@
+# Node.js dependencies
+**/node_modules
+.pnpm
+
+# Build outputs
+**/dist
+**/build
+**/.next
+**/.turbo
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS / Editor system files
+.DS_Store
+.idea
+.vscode
+*.swp
+
+# Optional lockfiles (keep if you want reproducible installs)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# TypeScript build artifacts
+**/*.tsbuildinfo

@@ -6,8 +6,7 @@
   "scripts": {
     "dev": "tsx src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js",
-    "postbuild": "cp -r ../../packages/llm-agent/dist ./node_modules/@ea-ai-agent/llm-agent/dist"
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "@ea-ai-agent/llm-agent": "workspace:*",

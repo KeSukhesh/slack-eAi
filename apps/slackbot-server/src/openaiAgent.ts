@@ -1,5 +1,5 @@
 import { OpenAI } from "openai";
-import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "./calendar";
+import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "./calendar.js";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 

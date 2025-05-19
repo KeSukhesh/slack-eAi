@@ -3,6 +3,8 @@ import bolt from "@slack/bolt";
 import express from "express";
 import { chatWithOpenAI } from "./openaiAgent.js";
 import { getAuthUrl, listCalendars } from "./calendar.js";
+import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "./calendar.js";
+
 
 const { App, ExpressReceiver } = bolt;
 
@@ -46,31 +48,55 @@ app.command("/calendar", async ({ ack, command, say }) => {
   const args = command.text.trim().split(/\s+/);
 
   if (args[0] === "list") {
-    try {
-      // TODO: Replace with real tokens once user linking is done
-      if (!userTokens) {
-        await say("⚠️ You need to connect your Google Calendar first. Run `/calendar connect`.");
-        return;
-      }
-
-      const calendars = await listCalendars(userTokens);
-      if (calendars.length === 0) {
-        await say("You have no calendars.");
-      } else {
-        const calendarNames = calendars.map((c) => `• ${c.summary ?? "Unnamed Calendar"}`).join("\n");
-        await say(`Here are your calendars:\n${calendarNames}`);
-      }
-    } catch (error) {
-      console.error("Failed to list calendars:", error);
-      await say("⚠️ Failed to list calendars.");
+    // ✅ List calendars (already implemented)
+    if (!userTokens) {
+      await say("⚠️ You need to connect your Google Calendar first. Run `/calendar connect`.");
+      return;
     }
+    const calendars = await listCalendars(userTokens);
+    const calendarNames = calendars.map((c) => `• ${c.summary ?? "Unnamed Calendar"}`).join("\n");
+    await say(calendars.length ? `Here are your calendars:\n${calendarNames}` : "You have no calendars.");
+
   } else if (args[0] === "connect") {
+    // ✅ Provide OAuth link (already implemented)
     const authUrl = getAuthUrl();
     await say(`Please connect your Google Calendar: ${authUrl}`);
+
+  } else if (args[0] === "create") {
+    // 🆕 Create Event Example: `/calendar create [calendarId] [summary] [startDateTime] [endDateTime]`
+    if (args.length < 5) {
+      await say("Usage: `/calendar create [calendarId] [summary] [startDateTime] [endDateTime]`");
+      return;
+    }
+    const [calendarId, summary, startDateTime, endDateTime] = args.slice(1);
+    const event = await createCalendarEvent(userTokens, calendarId, { summary, startDateTime, endDateTime });
+    await say(`✅ Event created: ${event.htmlLink}`);
+
+  } else if (args[0] === "update") {
+    // 🆕 Update Event Example: `/calendar update [calendarId] [eventId] [newSummary]`
+    if (args.length < 4) {
+      await say("Usage: `/calendar update [calendarId] [eventId] [newSummary]`");
+      return;
+    }
+    const [calendarId, eventId, newSummary] = args.slice(1);
+    const event = await updateCalendarEvent(userTokens, calendarId, eventId, { summary: newSummary });
+    await say(`✅ Event updated: ${event.htmlLink}`);
+
+  } else if (args[0] === "delete") {
+    // 🆕 Delete Event Example: `/calendar delete [calendarId] [eventId]`
+    if (args.length < 3) {
+      await say("Usage: `/calendar delete [calendarId] [eventId]`");
+      return;
+    }
+    const [calendarId, eventId] = args.slice(1);
+    await deleteCalendarEvent(userTokens, calendarId, eventId);
+    await say(`✅ Event deleted.`);
+
   } else {
-    await say("Unknown subcommand. Try `/calendar list` or `/calendar connect`.");
+    await say("Unknown subcommand. Try `/calendar list`, `/calendar connect`, `/calendar create`, `/calendar update`, or `/calendar delete`.");
   }
 });
+
 
 // Optional health check
 const healthApp = express();

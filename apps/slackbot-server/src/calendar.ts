@@ -40,3 +40,64 @@ export async function listCalendars(tokens: any) {
   const res = await calendar.calendarList.list();
   return res.data.items ?? [];
 }
+
+export async function createCalendarEvent(tokens: any, calendarId: string, eventDetails: {
+  summary: string;
+  description?: string;
+  startDateTime: string; // ISO string
+  endDateTime: string;   // ISO string
+  attendeesEmails?: string[];
+}) {
+  const calendar = getCalendarClient(tokens);
+  const res = await calendar.events.insert({
+    calendarId,
+    requestBody: {
+      summary: eventDetails.summary,
+      description: eventDetails.description,
+      start: { dateTime: eventDetails.startDateTime },
+      end: { dateTime: eventDetails.endDateTime },
+      attendees: eventDetails.attendeesEmails?.map(email => ({ email })) ?? [],
+    },
+  });
+  return res.data;
+}
+
+export async function updateCalendarEvent(tokens: any, calendarId: string, eventId: string, updates: {
+  summary?: string;
+  description?: string;
+  startDateTime?: string;
+  endDateTime?: string;
+  attendeesEmails?: string[];
+}) {
+  const calendar = getCalendarClient(tokens);
+  const res = await calendar.events.patch({
+    calendarId,
+    eventId,
+    requestBody: {
+      summary: updates.summary,
+      description: updates.description,
+      start: updates.startDateTime ? { dateTime: updates.startDateTime } : undefined,
+      end: updates.endDateTime ? { dateTime: updates.endDateTime } : undefined,
+      attendees: updates.attendeesEmails?.map(email => ({ email })),
+    },
+  });
+  return res.data;
+}
+
+export async function deleteCalendarEvent(tokens: any, calendarId: string, eventId: string) {
+  const calendar = getCalendarClient(tokens);
+  await calendar.events.delete({ calendarId, eventId });
+  return { success: true };
+}
+
+export async function listUpcomingEvents(tokens: any, calendarId: string, maxResults = 10) {
+  const calendar = getCalendarClient(tokens);
+  const res = await calendar.events.list({
+    calendarId,
+    timeMin: new Date().toISOString(),
+    maxResults,
+    singleEvents: true,
+    orderBy: 'startTime',
+  });
+  return res.data.items ?? [];
+}

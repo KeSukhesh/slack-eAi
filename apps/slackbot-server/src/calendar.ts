@@ -44,8 +44,8 @@ export async function listCalendars(tokens: any) {
 export async function createCalendarEvent(tokens: any, calendarId: string, eventDetails: {
   summary: string;
   description?: string;
-  startDateTime: string; // ISO string
-  endDateTime: string;   // ISO string
+  start: { dateTime: string; timeZone: string };
+  end: { dateTime: string; timeZone: string };
   attendeesEmails?: string[];
 }) {
   const calendar = getCalendarClient(tokens);
@@ -54,8 +54,8 @@ export async function createCalendarEvent(tokens: any, calendarId: string, event
     requestBody: {
       summary: eventDetails.summary,
       description: eventDetails.description,
-      start: { dateTime: eventDetails.startDateTime },
-      end: { dateTime: eventDetails.endDateTime },
+      start: eventDetails.start,
+      end: eventDetails.end,
       attendees: eventDetails.attendeesEmails?.map(email => ({ email })) ?? [],
     },
   });

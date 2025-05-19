@@ -23,6 +23,7 @@ You are a calendar assistant. Convert user requests into JSON with the following
   "endDateTime": "YYYY-MM-DDTHH:MM:SS",
   "eventId": "..."
 }
+Output JSON ONLY. Do not include explanations or comments.
 
 Example 1:
 Input: "Schedule team sync tomorrow at 3pm"
@@ -51,12 +52,24 @@ Output:
   const response = await chatWithOpenAI(prompt);
   console.log("LLM Raw Response:", response);
 
+  const jsonMatch = response?.match(/{[\s\S]*}/);
+  if (!jsonMatch) {
+    console.error("No valid JSON found in LLM response:", response);
+    return `⚠️ Failed to parse your request.`;
+  }
+
   try {
-    const parsed = JSON.parse(response || "{}");
+    const parsed = JSON.parse(jsonMatch[0]);
     const { action, calendarId = "primary", summary, startDateTime, endDateTime, eventId } = parsed;
 
+    const timezone = "Australia/Sydney";
+
     if (action === "create") {
-      const event = await createCalendarEvent(userTokens, calendarId, { summary, startDateTime, endDateTime });
+      const event = await createCalendarEvent(userTokens, calendarId, {
+        summary,
+        start: { dateTime: startDateTime, timeZone: timezone },
+        end: { dateTime: endDateTime, timeZone: timezone },
+      });
       return `✅ Event created: ${event.htmlLink}`;
     }
 
@@ -72,7 +85,7 @@ Output:
 
     return `⚠️ Could not understand your request.`;
   } catch (err) {
-    console.error("Failed to parse LLM response:", response, err);
+    console.error("Failed to parse JSON from LLM response:", response, err);
     return `⚠️ Failed to parse your request.`;
   }
 }

@@ -91,7 +91,13 @@ app.command("/calendar", async ({ ack, command, say }) => {
     const startDateTime = args[summaryIndex + 1];
     const endDateTime = args[summaryIndex + 2];
 
-    const event = await createCalendarEvent(userTokens, calendarId, { summary, startDateTime, endDateTime });
+    const timezone = "Australia/Sydney";
+    const event = await createCalendarEvent(userTokens, calendarId, {
+      summary,
+      start: { dateTime: startDateTime, timeZone: timezone },
+      end: { dateTime: endDateTime, timeZone: timezone },
+    });
+
     await say(`✅ Event created: ${event.htmlLink}`);
   } else if (args[0] === "update") {
     // 🆕 Update Event Example: `/calendar update [eventId] [newSummary]` or `/calendar update [calendarId] [eventId] [newSummary]`

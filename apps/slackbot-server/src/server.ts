@@ -6,6 +6,8 @@ import { getAuthUrl, listCalendars } from "./calendar.js";
 
 const { App, ExpressReceiver } = bolt;
 
+let userTokens: any = null;
+
 // Setup Express Receiver to listen on /slack/events
 const receiver = new ExpressReceiver({
   signingSecret: process.env.SLACK_SIGNING_SECRET!,
@@ -45,12 +47,12 @@ app.command("/calendar", async ({ ack, command, say }) => {
   if (args[0] === "list") {
     try {
       // TODO: Replace with real tokens once user linking is done
-      const fakeTokens = {
-        access_token: process.env.TEST_GOOGLE_ACCESS_TOKEN,
-        refresh_token: process.env.TEST_GOOGLE_REFRESH_TOKEN,
-      };
+      if (!userTokens) {
+        await say("⚠️ You need to connect your Google Calendar first. Run `/calendar connect`.");
+        return;
+      }
 
-      const calendars = await listCalendars(fakeTokens);
+      const calendars = await listCalendars(userTokens);
       if (calendars.length === 0) {
         await say("You have no calendars.");
       } else {
@@ -88,6 +90,9 @@ healthApp.get("/api/google/callback", (req, res) => {
     .then(({ getTokens }) => getTokens(code))
     .then((tokens) => {
       console.log("✅ Received tokens:", tokens);
+
+      // ✅ Store tokens in memory for testing
+      userTokens = tokens;
 
       res.send(`
         <h1>✅ Connected Successfully</h1>

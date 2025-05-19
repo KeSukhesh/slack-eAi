@@ -1,7 +1,7 @@
 import "dotenv/config";
 import bolt from "@slack/bolt";
 import express from "express";
-import { chatWithOpenAI } from "./openaiAgent.js";
+import { chatWithOpenAI, handleLlmCalendarAction } from "./openaiAgent.js";
 import { getAuthUrl, listCalendars, listUpcomingEvents } from "./calendar.js";
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "./calendar.js";
 
@@ -31,14 +31,18 @@ app.command("/ping", async ({ ack, say }) => {
 // App mention handler (@YourBot ...)
 app.event("app_mention", async ({ event, say }) => {
   const text = (event as any).text;
-  console.log("App mentioned with text:", text);
+
+  if (!userTokens) {
+    await say("⚠️ You need to connect your Google Calendar first. Run `/calendar connect`.");
+    return;
+  }
 
   try {
-    const response = await chatWithOpenAI(text);
-    await say(response ?? "Hmm... I couldn't generate a response.");
+    const reply = await handleLlmCalendarAction(text, userTokens);
+    await say(reply);
   } catch (error) {
-    console.error("Error calling chatWithOpenAI:", error);
-    await say("⚠️ Sorry, something went wrong while generating a response.");
+    console.error("Error handling calendar action:", error);
+    await say("⚠️ Sorry, something went wrong while processing your request.");
   }
 });
 

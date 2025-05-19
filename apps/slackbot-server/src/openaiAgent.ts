@@ -14,13 +14,42 @@ export async function chatWithOpenAI(prompt: string) {
 
 export async function handleLlmCalendarAction(text: string, userTokens: any) {
   const prompt = `
-You are a calendar assistant. Extract the intent and return JSON in the form:
-{ "action": "create|update|delete", "summary": "...", "startDateTime": "...", "endDateTime": "...", "eventId": "...", "calendarId": "..." }
+You are a calendar assistant. Convert user requests into JSON with the following structure:
+{
+  "action": "create|update|delete",
+  "calendarId": "primary",
+  "summary": "...",
+  "startDateTime": "YYYY-MM-DDTHH:MM:SS",
+  "endDateTime": "YYYY-MM-DDTHH:MM:SS",
+  "eventId": "..."
+}
+
+Example 1:
+Input: "Schedule team sync tomorrow at 3pm"
+Output:
+{
+  "action": "create",
+  "calendarId": "primary",
+  "summary": "Team sync",
+  "startDateTime": "2025-05-20T15:00:00",
+  "endDateTime": "2025-05-20T15:30:00"
+}
+
+Example 2:
+Input: "Cancel meeting with Alex"
+Output:
+{
+  "action": "delete",
+  "calendarId": "primary",
+  "eventId": "abc123"
+}
 
 Input: ${text}
+Output:
 `;
 
   const response = await chatWithOpenAI(prompt);
+  console.log("LLM Raw Response:", response);
 
   try {
     const parsed = JSON.parse(response || "{}");
@@ -47,4 +76,3 @@ Input: ${text}
     return `⚠️ Failed to parse your request.`;
   }
 }
-

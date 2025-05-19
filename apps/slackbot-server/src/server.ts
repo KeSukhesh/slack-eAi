@@ -1,7 +1,7 @@
 import "dotenv/config";
 import bolt from "@slack/bolt";
 import express from "express";
-import { chatWithOpenAI } from "./openaiAgent";
+import { chatWithOpenAI } from "./openaiAgent.js";
 
 const { App, ExpressReceiver } = bolt;
 

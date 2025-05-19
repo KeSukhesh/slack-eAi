@@ -2,6 +2,7 @@
   "name": "@ea-ai-agent/slackbot-server",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "tsx src/server.ts",
     "build": "tsc",

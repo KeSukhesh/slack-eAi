@@ -1,5 +1,6 @@
 import "dotenv/config";
-import { App, ExpressReceiver } from "@slack/bolt";
+import bolt from "@slack/bolt";
+const { App, ExpressReceiver } = bolt;
 import express, { Request, Response } from "express";
 
 // Setup Express Receiver to listen on /slack/events

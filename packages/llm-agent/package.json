@@ -1,0 +1,20 @@
+{
+  "name": "@ea-ai-agent/llm-agent",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.9.0",
+  "dependencies": {
+    "openai": "^4.100.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.19"
+  }
+}

@@ -1,7 +1,9 @@
 import "dotenv/config";
 import bolt from "@slack/bolt";
+import express from "express";
+import { chatWithOpenAI } from "@ea-ai-agent/llm-agent";
+
 const { App, ExpressReceiver } = bolt;
-import express, { Request, Response } from "express";
 
 // Setup Express Receiver to listen on /slack/events
 const receiver = new ExpressReceiver({
@@ -25,7 +27,13 @@ app.event("app_mention", async ({ event, say }) => {
   const text = (event as any).text;
   console.log("App mentioned with text:", text);
 
-  await say(`You mentioned me with: "${text}"`);
+  try {
+    const response = await chatWithOpenAI(text);
+    await say(response ?? "Hmm... I couldn't generate a response.");
+  } catch (error) {
+    console.error("Error calling chatWithOpenAI:", error);
+    await say("⚠️ Sorry, something went wrong while generating a response.");
+  }
 });
 
 // Optional health check

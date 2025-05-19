@@ -7,6 +7,7 @@ import { getAuthUrl, listCalendars } from "./calendar.js";
 const { App, ExpressReceiver } = bolt;
 
 let userTokens: any = null;
+console.log("Using GOOGLE_REDIRECT_URI:", process.env.GOOGLE_REDIRECT_URI);
 
 // Setup Express Receiver to listen on /slack/events
 const receiver = new ExpressReceiver({

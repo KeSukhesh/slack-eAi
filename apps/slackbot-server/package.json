@@ -9,7 +9,6 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
-    "@ea-ai-agent/llm-agent": "workspace:*",
     "@slack/bolt": "^4.3.0",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",

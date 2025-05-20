@@ -39,7 +39,44 @@ app.event("app_mention", async ({ event, say }) => {
 
   try {
     const reply = await handleLlmCalendarAction(text, userTokens);
-    await say(reply);
+
+    // Check if it's a modification that requires confirmation
+    if (reply.startsWith("✅ Event created")) {
+      await say(reply);
+    } else if (reply.includes("update") || reply.includes("delete")) {
+      // Propose change with buttons
+      await say({
+        text: reply,
+        blocks: [
+          {
+            type: "section",
+            text: { type: "mrkdwn", text: reply },
+          },
+          {
+            type: "actions",
+            block_id: "calendar_action", // Used in button handler
+            elements: [
+              {
+                type: "button",
+                text: { type: "plain_text", text: "✅ Confirm" },
+                style: "primary",
+                value: text, // Store original user text
+                action_id: "confirm_action",
+              },
+              {
+                type: "button",
+                text: { type: "plain_text", text: "❌ Discard" },
+                style: "danger",
+                value: text,
+                action_id: "discard_action",
+              },
+            ],
+          },
+        ],
+      });
+    } else {
+      await say(reply);
+    }
   } catch (error) {
     console.error("Error handling calendar action:", error);
     await say("⚠️ Sorry, something went wrong while processing your request.");
@@ -159,6 +196,47 @@ app.command("/calendar", async ({ ack, command, say }) => {
   } else {
     await say("Unknown subcommand. Try `/calendar list`, `/calendar connect`, `/calendar create`, `/calendar update`, or `/calendar delete`.");
   }
+});
+
+app.action("confirm_action", async ({ ack, body, client }) => {
+  await ack();
+  const text = (body as any).actions[0].value;
+
+  await client.chat.postEphemeral({
+    channel: (body as any).channel.id,
+    user: (body as any).user.id,
+    text: "⏳ Working on it...",
+  });
+
+  if (!userTokens) {
+    await client.chat.postMessage({
+      channel: (body as any).channel.id,
+      text: "⚠️ You need to connect your Google Calendar first. Run `/calendar connect`.",
+    });
+    return;
+  }
+
+  try {
+    const result = await handleLlmCalendarAction(text, userTokens);
+    await client.chat.postMessage({
+      channel: (body as any).channel.id,
+      text: `✅ Confirmed: ${result}`,
+    });
+  } catch (error) {
+    console.error("Error processing confirmed action:", error);
+    await client.chat.postMessage({
+      channel: (body as any).channel.id,
+      text: "⚠️ Failed to process your confirmation.",
+    });
+  }
+});
+
+app.action("discard_action", async ({ ack, body, client }) => {
+  await ack();
+  await client.chat.postMessage({
+    channel: (body as any).channel.id,
+    text: "❌ Discarded.",
+  });
 });
 
 

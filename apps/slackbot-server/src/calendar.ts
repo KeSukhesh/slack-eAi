@@ -105,6 +105,7 @@ export async function listUpcomingEvents(tokens: any, calendarId: string, maxRes
     summary: event.summary,
     id: event.id,
     start: event.start?.dateTime || event.start?.date,
+    end: event.end?.dateTime || event.end?.date,
     htmlLink: event.htmlLink,
   }));
 }

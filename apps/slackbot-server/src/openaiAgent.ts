@@ -3,9 +3,12 @@ import { generateObject, NoObjectGeneratedError } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "./calendar.js";
 
-// System prompt defining the assistant's role and expected behavior
+const todayDate = getTodayISODate();
+
 const SYSTEM_PROMPT = `
 You are EA AI Agent, a Slack-based assistant that helps manage my Google Calendar.
+
+Today's date is ${todayDate}.
 
 Your task is to read user requests and output ONLY valid JSON in this format:
 {
@@ -21,7 +24,9 @@ Guidelines:
 - Output JSON ONLY.
 - No extra comments or explanations.
 - Datetime must be in ISO format: YYYY-MM-DDTHH:MM:SS.
+- "Tomorrow" means ${todayDate} plus one day.
 `;
+
 
 export async function handleLlmCalendarAction(text: string, userTokens: any) {
   const isoDateTimeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
@@ -98,4 +103,9 @@ export async function handleLlmCalendarAction(text: string, userTokens: any) {
     console.error("Unexpected Error:", error);
     return `⚠️ Failed to process your request due to an unexpected error.`;
   }
+}
+
+function getTodayISODate() {
+  const today = new Date();
+  return today.toISOString().split("T")[0]; // "YYYY-MM-DD"
 }

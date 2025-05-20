@@ -90,7 +90,7 @@ export async function deleteCalendarEvent(tokens: any, calendarId: string, event
   return { success: true };
 }
 
-export async function listUpcomingEvents(tokens: any, calendarId: string, maxResults = 10) {
+export async function listUpcomingEvents(tokens: any, calendarId: string, maxResults = 50) {
   const calendar = getCalendarClient(tokens);
   const res = await calendar.events.list({
     calendarId,
@@ -102,8 +102,9 @@ export async function listUpcomingEvents(tokens: any, calendarId: string, maxRes
 
   const events = res.data.items ?? [];
   return events.map(event => ({
-    summary: event.summary,
     id: event.id,
+    summary: event.summary,
+    description: event.description || "",
     start: event.start?.dateTime || event.start?.date,
     end: event.end?.dateTime || event.end?.date,
     htmlLink: event.htmlLink,

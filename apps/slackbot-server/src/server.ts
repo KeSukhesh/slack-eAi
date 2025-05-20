@@ -1,5 +1,6 @@
 import "dotenv/config";
 import bolt from "@slack/bolt";
+import type { KnownBlock } from "@slack/web-api";
 import express from "express";
 import { handleLlmCalendarAction } from "./openaiAgent.js";
 import { getAuthUrl, listCalendars, listUpcomingEvents } from "./calendar.js";
@@ -15,8 +16,18 @@ type FuzzyDeletePreview = {
     summary: string;
     start: string | null | undefined;
     score: number;
+    htmlLink?: string;
   }[];
 };
+
+function isFuzzyDeletePreview(obj: unknown): obj is FuzzyDeletePreview {
+  if (!obj || typeof obj !== "object") return false;
+  const typedObj = obj as Record<string, unknown>;
+  return (
+    typedObj.type === "fuzzy-delete-preview" &&
+    Array.isArray(typedObj.topMatches)
+  );
+}
 
 let userTokens: any = null;
 console.log("Using GOOGLE_REDIRECT_URI:", process.env.GOOGLE_REDIRECT_URI);
@@ -50,64 +61,104 @@ app.event("app_mention", async ({ event, say, client }) => {
   try {
     const reply = await handleLlmCalendarAction(text, userTokens);
 
-    if (isFuzzyDeletePreview(reply)) {
-      const top = (reply as any).topMatches[0];
+    console.log("Reply type:", typeof reply, "Keys:", Object.keys(reply));
 
-      await client.views.open({
-        trigger_id: (event as any).trigger_id,
-        view: {
-          type: "modal",
-          callback_id: "fuzzy_delete_modal",
-          private_metadata: JSON.stringify({ eventId: top.id, summary: top.summary }),
-          title: { type: "plain_text", text: "Confirm Delete" },
-          submit: { type: "plain_text", text: "Delete" },
-          close: { type: "plain_text", text: "Cancel" },
+    if (isFuzzyDeletePreview(reply)) {
+      console.log("1232122323232323");
+      const { summary, topMatches } = reply;
+
+      if (!topMatches.length) {
+        await say(`⚠️ Couldn't find any matching events for: "${summary}".`);
+        return;
+      }
+
+      const top = topMatches[0];
+
+      if (top.score >= 0.9) {
+        // Confident match – ask user to confirm in-channel
+        console.log("MAMAMAMMAMAMAMMMAMMAMAMAMAM")
+        await client.chat.postMessage({
+          channel: event.channel,
+          text: `🗑️ Top match: *${top.summary}* at ${top.start || "Unknown time"}`,
           blocks: [
             {
               type: "section",
               text: {
                 type: "mrkdwn",
-                text: `Top match for *"${(reply as any).summary}"*:\n*${top.summary}*\n🕒 ${top.start || "Unknown time"}`,
+                text:
+                  `🗑️ I found *${top.summary}* at ${top.start || "Unknown time"}.\n` +
+                  (top.htmlLink ? `🔗 <${top.htmlLink}|View event on Google Calendar>\n` : "") +
+                  `Do you want to delete it?`,
               },
             },
+            {
+              type: "actions",
+              block_id: "confirm_delete_action",
+              elements: [
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "✅ Confirm" },
+                  style: "primary",
+                  value: JSON.stringify({ action: "delete", eventId: top.id, summary: top.summary }),
+                  action_id: "confirm_delete_action",
+                },
+                {
+                  type: "button",
+                  text: { type: "plain_text", text: "❌ Cancel" },
+                  style: "danger",
+                  value: JSON.stringify({ action: "discard" }),
+                  action_id: "discard_action",
+                },
+              ],
+            },
           ],
-        },
-      });
+        });
+      } else {
+        // Ambiguous match — show list of delete buttons
+        const blocks: Array<KnownBlock> = topMatches.slice(0, 3).flatMap((match, i) => [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `• *${match.summary}* – ${match.start}\nConfidence: *${Math.round(match.score * 100)}%*`,
+            },
+            accessory: {
+              type: "button",
+              text: { type: "plain_text", text: "Delete" },
+              style: "danger",
+              action_id: `delete_match_${i}`,
+              value: JSON.stringify({ eventId: match.id, summary: match.summary }),
+            },
+          },
+          { type: "divider" },
+        ]);
+
+        // Add cancel button
+        blocks.push({
+          type: "actions",
+          block_id: "cancel_fuzzy_delete",
+          elements: [
+            {
+              type: "button",
+              text: { type: "plain_text", text: "❌ Cancel" },
+              action_id: "cancel_fuzzy_delete",
+              style: "danger",
+            },
+          ],
+        });
+
+        await client.chat.postMessage({
+          channel: event.channel,
+          text: `❓ Found multiple possible matches for *"${summary}"*. Which one should I delete?`,
+          blocks,
+        });
+      }
+
       return;
     }
 
     if (typeof reply === "string" && reply.startsWith("✅ Event created")) {
       await say(reply);
-    } else if (typeof reply === "string" && (reply.includes("update") || reply.includes("delete"))) {
-      await say({
-        text: reply,
-        blocks: [
-          {
-            type: "section",
-            text: { type: "mrkdwn", text: reply },
-          },
-          {
-            type: "actions",
-            block_id: "calendar_action",
-            elements: [
-              {
-                type: "button",
-                text: { type: "plain_text", text: "✅ Confirm" },
-                style: "primary",
-                value: text,
-                action_id: "confirm_action",
-              },
-              {
-                type: "button",
-                text: { type: "plain_text", text: "❌ Discard" },
-                style: "danger",
-                value: text,
-                action_id: "discard_action",
-              },
-            ],
-          },
-        ],
-      });
     } else {
       await say(reply);
     }
@@ -116,10 +167,6 @@ app.event("app_mention", async ({ event, say, client }) => {
     await say("⚠️ Sorry, something went wrong while processing your request.");
   }
 });
-
-function isFuzzyDeletePreview(obj: any): obj is FuzzyDeletePreview {
-  return obj && obj.type === "fuzzy-delete-preview" && Array.isArray(obj.topMatches);
-}
 
 // Slash command /calendar
 app.command("/calendar", async ({ ack, command, say }) => {
@@ -236,36 +283,26 @@ app.command("/calendar", async ({ ack, command, say }) => {
   }
 });
 
-app.action("confirm_action", async ({ ack, body, client }) => {
+app.action("confirm_delete_action", async ({ ack, body, client }) => {
   await ack();
-  const text = (body as any).actions[0].value;
+  const payload = JSON.parse((body as any).actions[0].value);
 
-  await client.chat.postEphemeral({
-    channel: (body as any).channel.id,
-    user: (body as any).user.id,
-    text: "⏳ Working on it...",
-  });
+  if (payload.action === "delete") {
+    const { eventId, summary } = payload;
 
-  if (!userTokens) {
-    await client.chat.postMessage({
-      channel: (body as any).channel.id,
-      text: "⚠️ You need to connect your Google Calendar first. Run `/calendar connect`.",
-    });
-    return;
-  }
-
-  try {
-    const result = await handleLlmCalendarAction(text, userTokens);
-    await client.chat.postMessage({
-      channel: (body as any).channel.id,
-      text: `✅ Confirmed: ${result}`,
-    });
-  } catch (error) {
-    console.error("Error processing confirmed action:", error);
-    await client.chat.postMessage({
-      channel: (body as any).channel.id,
-      text: "⚠️ Failed to process your confirmation.",
-    });
+    try {
+      await deleteCalendarEvent(userTokens, "primary", eventId);
+      await client.chat.postMessage({
+        channel: (body as any).channel.id,
+        text: `✅ Deleted event *${summary}*.`,
+      });
+    } catch (err) {
+      console.error("Failed to delete event:", err);
+      await client.chat.postMessage({
+        channel: (body as any).channel.id,
+        text: "⚠️ Failed to delete event.",
+      });
+    }
   }
 });
 
@@ -273,12 +310,41 @@ app.action("discard_action", async ({ ack, body, client }) => {
   await ack();
   await client.chat.postMessage({
     channel: (body as any).channel.id,
-    text: "❌ Discarded.",
+    text: "❌ Cancelled.",
+  });
+});
+
+["delete_match_0", "delete_match_1", "delete_match_2"].forEach((actionId) => {
+  app.action(actionId, async ({ ack, body, client, action }) => {
+    await ack();
+
+    const { eventId, summary } = JSON.parse((action as any).value);
+
+    try {
+      await deleteCalendarEvent(userTokens, "primary", eventId);
+      await client.chat.postMessage({
+        channel: (body as any).channel.id,
+        text: `✅ Deleted event *${summary}*.`,
+      });
+    } catch (err) {
+      console.error("Failed to delete event:", err);
+      await client.chat.postMessage({
+        channel: (body as any).channel.id,
+        text: `⚠️ Failed to delete event.`,
+      });
+    }
+  });
+});
+
+app.action("cancel_fuzzy_delete", async ({ ack, body, client }) => {
+  await ack();
+  await client.chat.postMessage({
+    channel: (body as any).channel.id,
+    text: "❌ Cancelled deletion request.",
   });
 });
 
 
-// Optional health check
 const healthApp = express();
 healthApp.get("/", (_req, res) => {
   res.send("EA Agent API is running ✅");
@@ -315,25 +381,6 @@ healthApp.get("/api/google/callback", (req, res) => {
       console.error("Error exchanging code for tokens:", error);
       res.status(500).send("Failed to exchange code for tokens.");
     });
-});
-
-app.view("fuzzy_delete_modal", async ({ ack, body, view, client }) => {
-  await ack();
-  const { eventId, summary } = JSON.parse(view.private_metadata);
-
-  try {
-    await deleteCalendarEvent(userTokens, "primary", eventId);
-    await client.chat.postMessage({
-      channel: (body as any).user.id,
-      text: `✅ Deleted event *${summary}*.`,
-    });
-  } catch (err) {
-    console.error("Failed to delete event:", err);
-    await client.chat.postMessage({
-      channel: (body as any).user.id,
-      text: `⚠️ Failed to delete event.`,
-    });
-  }
 });
 
 // Mount Slack receiver and health check

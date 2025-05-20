@@ -2,9 +2,10 @@ import { z } from "zod";
 import { generateObject, NoObjectGeneratedError } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, listUpcomingEvents } from "./calendar.js";
-import fuzzysort from "fuzzysort";
+import natural from "natural";
 
 const todayDate = getTodayISODate();
+const TfIdf = natural.TfIdf;
 
 const SYSTEM_PROMPT = `
 You are EA AI Agent, a Slack-based assistant that helps manage my Google Calendar.
@@ -105,23 +106,33 @@ export async function handleLlmCalendarAction(text: string, userTokens: any) {
       let matchedEvent = null;
 
       if (!resolvedEventId && summary) {
-        const events = await listUpcomingEvents(userTokens, calendarId);
-        const validEvents = events.filter(
-          (e): e is { summary: string; id: string; start: string | null | undefined; end: string | null | undefined; htmlLink: string | null | undefined } =>
-            typeof e.summary === 'string' && typeof e.id === 'string'
-        );
-        matchedEvent = findClosestEvent(summary, validEvents);
-        if (!matchedEvent) return `⚠️ Couldn't find any event similar to "${summary}".`;
-        resolvedEventId = matchedEvent.id;
+        const events = await listUpcomingEvents(userTokens, calendarId, 50);
+        const enrichedEvents = events.map((e) => ({
+          id: e.id!,
+          summary: e.summary!,
+          description: e.description ?? "",
+          start: e.start!,
+          htmlLink: e.htmlLink ?? undefined,
+        }));
+
+        const fuzzyResult = await getFuzzyDeleteMatches(summary, enrichedEvents);
+        const bestMatch = fuzzyResult.topMatches?.[0];
+
+        if (!bestMatch || bestMatch.score < 0.8) {
+          return `⚠️ I couldn't confidently find an event to delete matching *"${summary}"*.`;
+        }
+
+        // Return fuzzy match object instead of deleting
+        return {
+          type: "fuzzy-delete-preview",
+          summary,
+          topMatches: fuzzyResult.topMatches,
+        } satisfies FuzzyDeletePreview;
       }
 
       if (!resolvedEventId) return `⚠️ No event ID found to delete.`;
 
       await deleteCalendarEvent(userTokens, calendarId, resolvedEventId);
-
-      if (matchedEvent) {
-        return `✅ Deleted event *"${matchedEvent.summary}"* (fuzzy match).`;
-      }
       return `✅ Deleted event with ID *${resolvedEventId}*.`;
     }
 
@@ -171,14 +182,95 @@ export const listUpcomingEventsTool = {
   },
 };
 
-function findClosestEvent(targetSummary: string, events: { summary: string; id: string }[]) {
-  const results = fuzzysort.go(targetSummary, events, {
-    key: "summary",
-    threshold: -10000, // optional: discard extremely poor matches
+type FuzzyDeletePreview = {
+  type: "fuzzy-delete-preview";
+  summary: string;
+  topMatches: {
+    id: string;
+    summary: string;
+    start: string;
+    score: number;
+    htmlLink?: string;
+  }[];
+};
+
+const FuzzyDeletePreviewSchema = z.object({
+  type: z.literal("fuzzy-delete-preview"),
+  summary: z.string(),
+  topMatches: z.array(
+    z.object({
+      id: z.string(),
+      summary: z.string(),
+      start: z.string(),
+      score: z.number(),
+      htmlLink: z.string().optional(),
+    })
+  ),
+});
+
+function sortByTfIdfSimilarity(userInput: string, events: { id: string; summary: string; description?: string; start: string; htmlLink?: string | null }[]) {
+  const tfidf = new TfIdf();
+  const normalizedInput = normalize(userInput);
+
+  // Index all events with normalized text
+  const eventDocs = events.map((e) => ({
+    ...e,
+    combined: normalize(`${e.summary} ${e.description ?? ""}`),
+  }));
+
+  eventDocs.forEach((e) => tfidf.addDocument(e.combined));
+
+  // Compute cosine similarity for each
+  const scores = eventDocs.map((e, i) => ({
+    ...e,
+    similarity: tfidf.tfidf(normalizedInput, i),
+  }));
+
+  return scores.sort((a, b) => b.similarity - a.similarity).slice(0, 10); // top 10 for LLM
+}
+
+async function getFuzzyDeleteMatches(userText: string, events: Array<{ id: string; summary: string; description?: string; start: string; htmlLink?: string | null }>) {
+  const topCandidates = sortByTfIdfSimilarity(userText, events);
+
+  const result = await generateObject({
+    model: openai("gpt-4o"),
+    schema: FuzzyDeletePreviewSchema,
+    prompt: `
+  You're a Slack assistant that helps users delete the correct Google Calendar event.
+
+  Given a user request and a list of upcoming events (in JSON), return a ranked list of 1-3 matching events (with confidence scores from 0 to 1).
+
+  Each event may include a score_hint field (0–1 cosine similarity to user's query). You may use it to guide your ranking.
+
+  Only return high-confidence matches. Format your output exactly like this:
+  {
+    "type": "fuzzy-delete-preview",
+    "summary": "...",
+    "topMatches": [
+      { "id": "...", "summary": "...", "start": "...", "score": 0.9, "htmlLink": "https://..." }
+    ]
+  }
+
+  User said: "${userText}"
+
+  Upcoming events (JSON):
+  ${JSON.stringify(topCandidates.map(({ id, summary, description, start, similarity, htmlLink }) => ({
+    id,
+    summary,
+    description,
+    start,
+    score_hint: similarity,
+    htmlLink,
+  })), null, 2)}`
   });
 
-  if (!results.length) return null;
+  return result.object;
+}
 
-  const best = results[0];
-  return best.score > -1000 ? best.obj : null; // adjust threshold as needed
+function normalize(str: string) {
+  return str
+    .toLowerCase()
+    .replace(/[^\w\s]/g, "") // remove punctuation
+    .replace(/\s+/g, " ")    // collapse spaces
+    .trim();
 }

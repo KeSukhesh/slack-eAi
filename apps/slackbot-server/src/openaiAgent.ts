@@ -2,6 +2,7 @@ import { z } from "zod";
 import { generateObject, NoObjectGeneratedError } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent, listUpcomingEvents } from "./calendar.js";
+import fuzzysort from "fuzzysort";
 
 const todayDate = getTodayISODate();
 
@@ -99,9 +100,29 @@ export async function handleLlmCalendarAction(text: string, userTokens: any) {
       return `✅ Event updated to *"${summary}"*.\n🔗 <${event.htmlLink}|View it on Google Calendar>`;
     }
 
-    if (action === "delete" && eventId) {
-      await deleteCalendarEvent(userTokens, calendarId, eventId);
-      return `✅ Event *"${summary || eventId}"* deleted successfully.`;
+    if (action === "delete") {
+      let resolvedEventId = eventId;
+      let matchedEvent = null;
+
+      if (!resolvedEventId && summary) {
+        const events = await listUpcomingEvents(userTokens, calendarId);
+        const validEvents = events.filter(
+          (e): e is { summary: string; id: string; start: string | null | undefined; end: string | null | undefined; htmlLink: string | null | undefined } =>
+            typeof e.summary === 'string' && typeof e.id === 'string'
+        );
+        matchedEvent = findClosestEvent(summary, validEvents);
+        if (!matchedEvent) return `⚠️ Couldn't find any event similar to "${summary}".`;
+        resolvedEventId = matchedEvent.id;
+      }
+
+      if (!resolvedEventId) return `⚠️ No event ID found to delete.`;
+
+      await deleteCalendarEvent(userTokens, calendarId, resolvedEventId);
+
+      if (matchedEvent) {
+        return `✅ Deleted event *"${matchedEvent.summary}"* (fuzzy match).`;
+      }
+      return `✅ Deleted event with ID *${resolvedEventId}*.`;
     }
 
     return `⚠️ Could not understand your request.`;
@@ -149,3 +170,15 @@ export const listUpcomingEventsTool = {
     }));
   },
 };
+
+function findClosestEvent(targetSummary: string, events: { summary: string; id: string }[]) {
+  const results = fuzzysort.go(targetSummary, events, {
+    key: "summary",
+    threshold: -10000, // optional: discard extremely poor matches
+  });
+
+  if (!results.length) return null;
+
+  const best = results[0];
+  return best.score > -1000 ? best.obj : null; // adjust threshold as needed
+}

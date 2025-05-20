@@ -5,8 +5,18 @@ import { handleLlmCalendarAction } from "./openaiAgent.js";
 import { getAuthUrl, listCalendars, listUpcomingEvents } from "./calendar.js";
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "./calendar.js";
 
-
 const { App, ExpressReceiver } = bolt;
+
+type FuzzyDeletePreview = {
+  type: "fuzzy-delete-preview";
+  summary: string;
+  topMatches: {
+    id: string;
+    summary: string;
+    start: string | null | undefined;
+    score: number;
+  }[];
+};
 
 let userTokens: any = null;
 console.log("Using GOOGLE_REDIRECT_URI:", process.env.GOOGLE_REDIRECT_URI);
@@ -29,7 +39,7 @@ app.command("/ping", async ({ ack, say }) => {
 });
 
 // App mention handler (@YourBot ...)
-app.event("app_mention", async ({ event, say }) => {
+app.event("app_mention", async ({ event, say, client }) => {
   const text = (event as any).text;
 
   if (!userTokens) {
@@ -40,11 +50,35 @@ app.event("app_mention", async ({ event, say }) => {
   try {
     const reply = await handleLlmCalendarAction(text, userTokens);
 
-    // Check if it's a modification that requires confirmation
-    if (reply.startsWith("✅ Event created")) {
+    if (isFuzzyDeletePreview(reply)) {
+      const top = (reply as any).topMatches[0];
+
+      await client.views.open({
+        trigger_id: (event as any).trigger_id,
+        view: {
+          type: "modal",
+          callback_id: "fuzzy_delete_modal",
+          private_metadata: JSON.stringify({ eventId: top.id, summary: top.summary }),
+          title: { type: "plain_text", text: "Confirm Delete" },
+          submit: { type: "plain_text", text: "Delete" },
+          close: { type: "plain_text", text: "Cancel" },
+          blocks: [
+            {
+              type: "section",
+              text: {
+                type: "mrkdwn",
+                text: `Top match for *"${(reply as any).summary}"*:\n*${top.summary}*\n🕒 ${top.start || "Unknown time"}`,
+              },
+            },
+          ],
+        },
+      });
+      return;
+    }
+
+    if (typeof reply === "string" && reply.startsWith("✅ Event created")) {
       await say(reply);
-    } else if (reply.includes("update") || reply.includes("delete")) {
-      // Propose change with buttons
+    } else if (typeof reply === "string" && (reply.includes("update") || reply.includes("delete"))) {
       await say({
         text: reply,
         blocks: [
@@ -54,13 +88,13 @@ app.event("app_mention", async ({ event, say }) => {
           },
           {
             type: "actions",
-            block_id: "calendar_action", // Used in button handler
+            block_id: "calendar_action",
             elements: [
               {
                 type: "button",
                 text: { type: "plain_text", text: "✅ Confirm" },
                 style: "primary",
-                value: text, // Store original user text
+                value: text,
                 action_id: "confirm_action",
               },
               {
@@ -82,6 +116,10 @@ app.event("app_mention", async ({ event, say }) => {
     await say("⚠️ Sorry, something went wrong while processing your request.");
   }
 });
+
+function isFuzzyDeletePreview(obj: any): obj is FuzzyDeletePreview {
+  return obj && obj.type === "fuzzy-delete-preview" && Array.isArray(obj.topMatches);
+}
 
 // Slash command /calendar
 app.command("/calendar", async ({ ack, command, say }) => {
@@ -279,6 +317,24 @@ healthApp.get("/api/google/callback", (req, res) => {
     });
 });
 
+app.view("fuzzy_delete_modal", async ({ ack, body, view, client }) => {
+  await ack();
+  const { eventId, summary } = JSON.parse(view.private_metadata);
+
+  try {
+    await deleteCalendarEvent(userTokens, "primary", eventId);
+    await client.chat.postMessage({
+      channel: (body as any).user.id,
+      text: `✅ Deleted event *${summary}*.`,
+    });
+  } catch (err) {
+    console.error("Failed to delete event:", err);
+    await client.chat.postMessage({
+      channel: (body as any).user.id,
+      text: `⚠️ Failed to delete event.`,
+    });
+  }
+});
 
 // Mount Slack receiver and health check
 const PORT = process.env.PORT || 3000;

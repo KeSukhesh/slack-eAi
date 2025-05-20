@@ -1,7 +1,7 @@
 import "dotenv/config";
 import bolt from "@slack/bolt";
 import express from "express";
-import { chatWithOpenAI, handleLlmCalendarAction } from "./openaiAgent.js";
+import { handleLlmCalendarAction } from "./openaiAgent.js";
 import { getAuthUrl, listCalendars, listUpcomingEvents } from "./calendar.js";
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "./calendar.js";
 
@@ -68,7 +68,6 @@ app.command("/calendar", async ({ ack, command, say }) => {
 
     await say(`Here are your calendars:\n${calendarDetails}`);
   } else if (args[0] === "connect") {
-    // ✅ Provide OAuth link (already implemented)
     const authUrl = getAuthUrl();
     await say(`Please connect your Google Calendar: ${authUrl}`);
 
@@ -100,7 +99,6 @@ app.command("/calendar", async ({ ack, command, say }) => {
 
     await say(`✅ Event created: ${event.htmlLink}`);
   } else if (args[0] === "update") {
-    // 🆕 Update Event Example: `/calendar update [eventId] [newSummary]` or `/calendar update [calendarId] [eventId] [newSummary]`
     if (args.length < 3) {
       await say("Usage: `/calendar update [eventId] [newSummary]` or `/calendar update [calendarId] [eventId] [newSummary]`");
       return;
@@ -122,7 +120,6 @@ app.command("/calendar", async ({ ack, command, say }) => {
     await say(`✅ Event updated: ${event.htmlLink}`);
 
   } else if (args[0] === "delete") {
-    // 🆕 Delete Event Example: `/calendar delete [eventId]` or `/calendar delete [calendarId] [eventId]`
     if (args.length < 2) {
       await say("Usage: `/calendar delete [eventId]` or `/calendar delete [calendarId] [eventId]`");
       return;
@@ -146,17 +143,17 @@ app.command("/calendar", async ({ ack, command, say }) => {
       await say("⚠️ You need to connect your Google Calendar first. Run `/calendar connect`.");
       return;
     }
-  
+
     const calendarId = args[1] || "primary";
     const events = await listUpcomingEvents(userTokens, calendarId);
-  
+
     if (events.length === 0) {
       await say("No upcoming events found.");
     } else {
       const eventDetails = events.map(
         (e) => `• *${e.summary ?? "No Title"}* at ${e.start} — ID: \`${e.id}\``
       ).join("\n");
-  
+
       await say(`Here are your upcoming events:\n${eventDetails}`);
     }
   } else {
@@ -191,7 +188,6 @@ healthApp.get("/api/google/callback", (req, res) => {
     .then((tokens) => {
       console.log("✅ Received tokens:", tokens);
 
-      // ✅ Store tokens in memory for testing
       userTokens = tokens;
 
       res.send(`

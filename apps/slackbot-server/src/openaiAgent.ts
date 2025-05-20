@@ -1,20 +1,13 @@
-import { OpenAI } from "openai";
+import { z } from "zod";
+import { generateObject, NoObjectGeneratedError } from "ai";
+import { openai } from "@ai-sdk/openai";
 import { createCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "./calendar.js";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+// System prompt defining the assistant's role and expected behavior
+const SYSTEM_PROMPT = `
+You are EA AI Agent, a Slack-based assistant that helps manage my Google Calendar.
 
-export async function chatWithOpenAI(prompt: string) {
-  const completion = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo",
-    messages: [{ role: "user", content: prompt }],
-  });
-
-  return completion.choices[0]?.message.content;
-}
-
-export async function handleLlmCalendarAction(text: string, userTokens: any) {
-  const prompt = `
-You are a calendar assistant. Convert user requests into JSON with the following structure:
+Your task is to read user requests and output ONLY valid JSON in this format:
 {
   "action": "create|update|delete",
   "calendarId": "primary",
@@ -23,48 +16,53 @@ You are a calendar assistant. Convert user requests into JSON with the following
   "endDateTime": "YYYY-MM-DDTHH:MM:SS",
   "eventId": "..."
 }
-Output JSON ONLY. Do not include explanations or comments.
 
-Example 1:
-Input: "Schedule team sync tomorrow at 3pm"
-Output:
-{
-  "action": "create",
-  "calendarId": "primary",
-  "summary": "Team sync",
-  "startDateTime": "2025-05-20T15:00:00",
-  "endDateTime": "2025-05-20T15:30:00"
-}
-
-Example 2:
-Input: "Cancel meeting with Alex"
-Output:
-{
-  "action": "delete",
-  "calendarId": "primary",
-  "eventId": "abc123"
-}
-
-Input: ${text}
-Output:
+Guidelines:
+- Output JSON ONLY.
+- No extra comments or explanations.
+- Datetime must be in ISO format: YYYY-MM-DDTHH:MM:SS.
 `;
 
-  const response = await chatWithOpenAI(prompt);
-  console.log("LLM Raw Response:", response);
+export async function handleLlmCalendarAction(text: string, userTokens: any) {
+  const isoDateTimeRegex = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
 
-  const jsonMatch = response?.match(/{[\s\S]*}/);
-  if (!jsonMatch) {
-    console.error("No valid JSON found in LLM response:", response);
-    return `⚠️ Failed to parse your request.`;
-  }
+  const schema = z.object({
+    action: z.enum(["create", "update", "delete"]),
+    calendarId: z.string().default("primary"),
+    summary: z.string().optional(),
+    startDateTime: z
+      .string()
+      .describe('ISO 8601 datetime string "YYYY-MM-DDTHH:MM:SS"')
+      .refine((s) => isoDateTimeRegex.test(s), {
+        message: "startDateTime must be in 'YYYY-MM-DDTHH:MM:SS' format",
+      })
+      .optional(),
+    endDateTime: z
+      .string()
+      .describe('ISO 8601 datetime string "YYYY-MM-DDTHH:MM:SS"')
+      .refine((s) => isoDateTimeRegex.test(s), {
+        message: "endDateTime must be in 'YYYY-MM-DDTHH:MM:SS' format",
+      })
+      .optional(),
+    eventId: z.string().optional(),
+  });
 
   try {
-    const parsed = JSON.parse(jsonMatch[0]);
-    const { action, calendarId = "primary", summary, startDateTime, endDateTime, eventId } = parsed;
+    const { object } = await generateObject({
+      model: openai("gpt-3.5-turbo-0125"),
+      schema,
+      schemaName: "CalendarAction",
+      schemaDescription: "Structured calendar action from user request",
+      system: SYSTEM_PROMPT,
+      prompt: `User request: "${text}"\nOutput:`,
+    });
 
+    console.log("LLM Structured Response:", object);
+
+    const { action, calendarId = "primary", summary, startDateTime, endDateTime, eventId } = object;
     const timezone = "Australia/Sydney";
 
-    if (action === "create") {
+    if (action === "create" && startDateTime && endDateTime && summary) {
       const event = await createCalendarEvent(userTokens, calendarId, {
         summary,
         start: { dateTime: startDateTime, timeZone: timezone },
@@ -73,19 +71,31 @@ Output:
       return `✅ Event created: ${event.htmlLink}`;
     }
 
-    if (action === "update") {
+    if (action === "update" && eventId && summary) {
       const event = await updateCalendarEvent(userTokens, calendarId, eventId, { summary });
       return `✅ Event updated: ${event.htmlLink}`;
     }
 
-    if (action === "delete") {
+    if (action === "delete" && eventId) {
       await deleteCalendarEvent(userTokens, calendarId, eventId);
       return `✅ Event deleted.`;
     }
 
     return `⚠️ Could not understand your request.`;
-  } catch (err) {
-    console.error("Failed to parse JSON from LLM response:", response, err);
-    return `⚠️ Failed to parse your request.`;
+
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      console.error("Validation Error:", error.errors);
+      const messages = error.errors.map(e => e.message).join(", ");
+      return `⚠️ Invalid data format: ${messages}`;
+    }
+
+    if (NoObjectGeneratedError.isInstance(error)) {
+      console.error("NoObjectGeneratedError:", error.text, error.cause);
+      return `⚠️ The AI could not produce valid data. Please rephrase and try again.`;
+    }
+
+    console.error("Unexpected Error:", error);
+    return `⚠️ Failed to process your request due to an unexpected error.`;
   }
 }
